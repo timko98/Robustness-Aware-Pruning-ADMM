@@ -17,9 +17,9 @@ from utils import *
 from models import *
 from config import Config
 
-from ADMM_examples.cifar10.models.wrn import Wide_ResNet_28_4
-
 sys.path.append('../../') # append root directory
+
+from ADMM_examples.cifar10.models.wrn import Wide_ResNet_28_4
 
 from admm.warmup_scheduler import GradualWarmupScheduler
 from admm.cross_entropy import CrossEntropyLossMaybeSmooth
@@ -229,7 +229,7 @@ if config.load_model:
         # qi pretrained model
         state_dict = torch.load(config.load_model)['state_dict']
         print(state_dict.keys())
-        state_dict = {f"basic_model.{k}": v for k, v in state_dict.items() if k.find('popup_scores') == -1}
+        state_dict = {f"module.basic_model.{k}": v for k, v in state_dict.items() if k.find('popup_scores') == -1}
         config.model.load_state_dict(state_dict)
     
 
