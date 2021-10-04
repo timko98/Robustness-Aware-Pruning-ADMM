@@ -7,6 +7,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 import time
+import timeit
 import torchvision
 import torchvision.transforms as transforms
 import sys
@@ -59,7 +60,7 @@ def accuracy(output, target, topk=(1,)):
 
         res = []
         for k in topk:
-            correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+            correct_k = correct[:k].contiguous().view(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
 
@@ -105,7 +106,8 @@ parser.add_argument('--stage', type=str, default='', help ="select the pruning s
 #init = Init_Func(config.init_func)
 #torch.manual_seed(config.random_seed)
 
-
+best_nat_acc = AverageMeter()
+best_adv_acc = AverageMeter()
 
 args = parser.parse_args()
 
@@ -140,10 +142,10 @@ transform_test = transforms.Compose([
 ])
 
 trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=128, shuffle=True, num_workers=config.workers)
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=256, shuffle=True, num_workers=config.workers)
 
 testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
-testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=config.workers)
+testloader = torch.utils.data.DataLoader(testset, batch_size=200, shuffle=False, num_workers=config.workers)
 
 classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
@@ -211,8 +213,23 @@ if device == 'cuda':
 if config.load_model:
     # unlike resume, load model does not care optimizer status or start_epoch
     print('==> Loading from {}'.format(config.load_model))
-
-    config.model.load_state_dict(torch.load(config.load_model)) # i call 'net' "model"
+    if not config.admm:
+        # config.model.load_state_dict(torch.load(config.load_model)['net'])
+        config.model.load_state_dict(torch.load(config.load_model, map_location=torch.device('cuda:0')))
+        # config.model.load_state_dict(torch.load(config.load_model))
+    else:
+        # orig admm
+        # config.model.load_state_dict(torch.load(config.load_model)['net']) # i call 'net' "model"
+        # qi resnet18
+        state_dict = torch.load(config.load_model)['state_dict']
+        print(state_dict.keys())
+        state_dict = {f"module.basic_model.{k}": v for k, v in state_dict.items() if k.find('popup_scores') == -1}
+        config.model.load_state_dict(state_dict)
+        # qi pretrained model
+        # state_dict = torch.load(config.load_model)['state_dict']
+        # print(state_dict.keys())
+        # state_dict = {f"module.basic_model.{k}": v for k, v in state_dict.items() if k.find('popup_scores') == -1}
+        # config.model.load_state_dict(state_dict)
     
 
 
@@ -230,13 +247,17 @@ if config.resume:
     # Load checkpoint.
     print('==> Resuming from checkpoint..')
     assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-    checkpoint = torch.load('./checkpoint/ckpt.t7')
+    checkpoint = torch.load(f"checkpoint_{config.save_model}")
+    print(checkpoint.keys())
     config.model.load_state_dict(checkpoint['net'])
-    best_acc = checkpoint['acc']
+    # start_epoch = 65
     start_epoch = checkpoint['epoch']
-    ADMM.ADMM_U = checkpoint['admm']['ADMM_U']
-    ADMM.ADMM_Z = checkpoint['admm']['ADMM_Z']
-
+    best_mean_loss = checkpoint['best_loss']
+    if ADMM:
+        ADMM.ADMM_U = checkpoint['admm']['ADMM_U']
+        ADMM.ADMM_Z = checkpoint['admm']['ADMM_Z']
+    
+    
 criterion = CrossEntropyLossMaybeSmooth(smooth_eps=config.smooth_eps).cuda(config.gpu)
 config.smooth = config.smooth_eps > 0.0
 config.mixup = config.alpha > 0.0
@@ -368,7 +389,7 @@ def train(train_loader,criterion, optimizer, epoch, config):
 
 
 
-def validate(val_loader,criterion, config):
+def validate(val_loader,criterion, config, epoch):
     batch_time = AverageMeter()
     nat_losses = AverageMeter()
     adv_losses = AverageMeter()    
@@ -421,18 +442,48 @@ def validate(val_loader,criterion, config):
               .format(nat_top1=nat_top1,adv_top1=adv_top1))
 
         global best_mean_loss
+        global best_adv_acc
+        global best_nat_acc
         mean_loss = (adv_losses.avg+nat_losses.avg)/2
         if mean_loss<best_mean_loss and not config.admm:
             best_mean_loss = mean_loss
+            best_adv_acc = adv_top1
+            best_nat_acc = nat_top1
             print ('new best_mean_loss is {}'.format(mean_loss))
             print ('saving model {}'.format(config.save_model))
-            torch.save(config.model.state_dict(),config.save_model)
+            """
+            torch.save({
+                "net": config.model.state_dict(),
+                "epoch": (int(epoch)+1)
+            },config.save_model)
+            """
+            torch.save({
+                "net": config.model.state_dict()
+            },f"BEST_{config.save_model}")
+            
+        if config.save_model and config.admm:
+            print ('saving checkpoint model checkpoint_{}'.format(config.save_model))
+            # torch.save(config.model.state_dict(),config.save_model)
+            torch.save({
+                "net": config.model.state_dict(),
+                "epoch": (int(epoch)+1),
+                "admm": {'ADMM_U': ADMM.ADMM_U, 'ADMM_Z': ADMM.ADMM_Z},
+                "best_loss": best_mean_loss,
+            },f"checkpoint_{config.save_model}")
+            
+        if config.save_model and not config.admm:
+            print ('saving checkpoint model checkpoint_{}'.format(config.save_model))
+            torch.save({
+                "net": config.model.state_dict(),
+                "epoch": (int(epoch)+1),
+                "best_loss": best_mean_loss,
+            },f"checkpoint_{config.save_model}")
 
     return adv_top1.avg
 
 
 if config.admm:
-    validate(testloader,criterion,config)
+    validate(testloader,criterion,config, 0)
 
 if config.masked_retrain:
     # make sure small weights are pruned and confirm the acc
@@ -440,20 +491,31 @@ if config.masked_retrain:
     admm.masking(config)
     print ("<============testing sparsity before retrain")
     admm.test_sparsity(config)
-    validate(testloader,criterion,config)
+    validate(testloader,criterion,config, 0)
 if config.masked_progressive:
     admm.zero_masking(config)
 
-for epoch in range(start_epoch, start_epoch+config.epochs):
-    train(trainloader,criterion,optimizer,epoch,config)
-    validate(testloader,criterion,config)
+start_time = timeit.default_timer()
+print(f"Start time: {start_time}")
+for epoch in range(start_epoch, config.epochs):
+    total_weights = 0
+    zero_weights = 0
+    for param in model.parameters():
+        if param is not None:
+            total_weights += param.numel()
+            zero_weights += param.numel() - param.nonzero().size(0)
 
-####LOG HERE###
-if config.logging:
-    logger.info(f'---Final Results---')
-    logger.info(f'overall best_acc is {best_acc}')
+    print(f"Total number of weights: {total_weights}")
+    print(f"Total number of zero weights: {zero_weights}")
+    train(trainloader,criterion,optimizer,epoch,config)
+    validate(testloader,criterion,config, epoch)
+                   
+stop_time = timeit.default_timer()
 
 print ('overall  best_mean_loss is {}'.format(best_mean_loss))
+print(f"Best natural accuracy: {best_nat_acc.avg}")
+print(f"Best adversarial accuracy: {best_adv_acc.avg}")
+print(f"Total runtime: {stop_time-start_time} seconds - {float((stop_time-start_time)/3600)} hours")
 
 
 if config.masked_retrain:
@@ -462,5 +524,5 @@ if config.masked_retrain:
 
 
 if config.save_model and config.admm:
-    print ('saving model {}'.format(config.save_model))
+    print ('saving final model {}'.format(config.save_model))
     torch.save(config.model.state_dict(),config.save_model)

@@ -56,7 +56,8 @@ def accuracy(output, target, topk=(1,)):
 
         res = []
         for k in topk:
-            correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+            # correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+            correct_k = correct[:k].contiguous().view(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
 
@@ -207,19 +208,19 @@ def main():
     device = torch.device("cuda" if use_cuda else "cpu")
     #device = "cpu"
 
-    model = ResNet18_adv(w=1).to(device)
+    model = ResNet18_adv(w=16).to(device)
     model = AttackPGD(model)
     model = torch.nn.DataParallel(model)
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
     criterion = CrossEntropyLossMaybeSmooth(smooth_eps=0.0).cuda(gpu) 
        
-    load_model = 'resnet18_adv_w1.pt'
+    load_model = 'BEST_resnet18_retrain_weight_10_harp_strategy.pt'
         
         # unlike resume, load model does not care optimizer status or start_epoch
     print('==> Loading from {}'.format(load_model))
 
-    model.load_state_dict(torch.load(load_model,map_location = {'cuda:0':'cuda:{}'.format(gpu)}))
+    model.load_state_dict(torch.load(load_model,map_location = {'cuda:0':'cuda:{}'.format(gpu)})['net'])
     
 
 

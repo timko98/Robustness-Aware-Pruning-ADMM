@@ -6,7 +6,10 @@ import torch.nn as nn
 cfg = {
     'vgg11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'vgg13': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    'vgg16': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
+    # orig
+    # 'vgg16': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
+    # hydra vgg16
+    'vgg16': [ 64, 64, "M", 128, 128, "M", 256, 256, 256, "M", 512, 512, 512, "M", 512, 512, 512],
     'vgg19': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
     'vgg16_1by8': [8, 8, 'M', 16, 16, 'M', 32, 32, 32, 'M', 64, 64, 64, 'M', 64, 64, 64, 'M'], #1/8
     'vgg16_1by16': [4, 4, 'M', 8, 8, 'M', 16, 16, 16, 'M', 32, 32, 32, 'M', 32, 32, 32, 'M'], #1/16
@@ -27,7 +30,16 @@ class VGG(nn.Module):
             final_channels = 32
         elif vgg_name == 'vgg16_1by32':
             final_channels = 16
-        self.classifier = nn.Linear(final_channels, 10)
+        # self.classifier = nn.Linear(final_channels, 10)
+        # """
+        self.classifier = nn.Sequential(
+            nn.Linear(final_channels * 2 * 2, 256),
+            nn.ReLU(True),
+            nn.Linear(256, 256),
+            nn.ReLU(True),
+            nn.Linear(256, 10),
+        )
+        # """
 
     def forward(self, x):
         out = self.features(x)
@@ -43,11 +55,14 @@ class VGG(nn.Module):
                 layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
             else:
                 x = int(w/16*x)
-                layers += [nn.Conv2d(in_channels, x, kernel_size=3, padding=1),
+                layers += [nn.Conv2d(in_channels, x, kernel_size=3, padding=1, bias=False),
                            nn.BatchNorm2d(x),
                            nn.ReLU(inplace=True)]
                 in_channels = x
-        layers += [nn.AvgPool2d(kernel_size=1, stride=1)]
+        # orig
+        # layers += [nn.AvgPool2d(kernel_size=1, stride=1)]
+        # hydra vgg
+        layers += [nn.AdaptiveAvgPool2d((2, 2))]
         return nn.Sequential(*layers)
 
 
