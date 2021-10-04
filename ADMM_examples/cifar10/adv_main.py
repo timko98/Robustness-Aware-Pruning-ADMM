@@ -17,7 +17,7 @@ from utils import *
 from models import *
 from config import Config
 
-
+from ADMM_examples.cifar10.models.wrn import Wide_ResNet_28_4
 
 sys.path.append('../../') # append root directory
 
@@ -28,7 +28,6 @@ from admm.utils import mixup_data, mixup_criterion
 from admm.init_func import Init_Func
 
 import admm
-
 
 model_names = ['vgg16','resnet18','vgg16_1by8','vgg16_1by16','vgg16_1by32']
 
@@ -182,6 +181,8 @@ elif config.arch == 'lenet':
     model = LeNet(w= config.width_multiplier)
 elif config.arch == 'resnet18_adv_wide':
     model = ResNet18_adv_wide()
+elif config.arch == 'wrn_28_4':
+    model = Wide_ResNet_28_4()
 # model = PreActResNet18()
 # model = GoogLeNet()
 # model = DenseNet121()
@@ -221,15 +222,15 @@ if config.load_model:
         # orig admm
         # config.model.load_state_dict(torch.load(config.load_model)['net']) # i call 'net' "model"
         # qi resnet18
-        state_dict = torch.load(config.load_model)['state_dict']
-        print(state_dict.keys())
-        state_dict = {f"module.basic_model.{k}": v for k, v in state_dict.items() if k.find('popup_scores') == -1}
-        config.model.load_state_dict(state_dict)
-        # qi pretrained model
         # state_dict = torch.load(config.load_model)['state_dict']
         # print(state_dict.keys())
         # state_dict = {f"module.basic_model.{k}": v for k, v in state_dict.items() if k.find('popup_scores') == -1}
         # config.model.load_state_dict(state_dict)
+        # qi pretrained model
+        state_dict = torch.load(config.load_model)['state_dict']
+        print(state_dict.keys())
+        state_dict = {f"basic_model.{k}": v for k, v in state_dict.items() if k.find('popup_scores') == -1}
+        config.model.load_state_dict(state_dict)
     
 
 
@@ -256,8 +257,8 @@ if config.resume:
     if ADMM:
         ADMM.ADMM_U = checkpoint['admm']['ADMM_U']
         ADMM.ADMM_Z = checkpoint['admm']['ADMM_Z']
-    
-    
+
+
 criterion = CrossEntropyLossMaybeSmooth(smooth_eps=config.smooth_eps).cuda(config.gpu)
 config.smooth = config.smooth_eps > 0.0
 config.mixup = config.alpha > 0.0
@@ -460,7 +461,7 @@ def validate(val_loader,criterion, config, epoch):
             torch.save({
                 "net": config.model.state_dict()
             },f"BEST_{config.save_model}")
-            
+
         if config.save_model and config.admm:
             print ('saving checkpoint model checkpoint_{}'.format(config.save_model))
             # torch.save(config.model.state_dict(),config.save_model)
@@ -470,7 +471,7 @@ def validate(val_loader,criterion, config, epoch):
                 "admm": {'ADMM_U': ADMM.ADMM_U, 'ADMM_Z': ADMM.ADMM_Z},
                 "best_loss": best_mean_loss,
             },f"checkpoint_{config.save_model}")
-            
+
         if config.save_model and not config.admm:
             print ('saving checkpoint model checkpoint_{}'.format(config.save_model))
             torch.save({
@@ -509,7 +510,7 @@ for epoch in range(start_epoch, config.epochs):
     print(f"Total number of zero weights: {zero_weights}")
     train(trainloader,criterion,optimizer,epoch,config)
     validate(testloader,criterion,config, epoch)
-                   
+
 stop_time = timeit.default_timer()
 
 print ('overall  best_mean_loss is {}'.format(best_mean_loss))
