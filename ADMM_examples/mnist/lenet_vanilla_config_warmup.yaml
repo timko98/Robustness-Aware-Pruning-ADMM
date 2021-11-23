@@ -3,7 +3,7 @@
 #sample_argument:
 #type || default value
 #value
-#print_freq  int || 10  
+#print_freq  int || 10
 #resume      bool || False     *resume from checkpoint
 #gpu_id      int  || null      * gpu id to use
 #lr          float || 0.1      *learning rate
@@ -43,25 +43,25 @@ adv:
  loss_func:
   xent
  width_multiplier:
-  2
+  1
  init_func:
   default
 general:
- sparsity_type: 
+ sparsity_type:
   filter
  print_freq:
-  10 
- resume:  
-  False 
- gpu_id:  
-  0
- arch: 
-  lenet_adv
- workers: 
-  16
- logging: 
+  10
+ resume:
   False
- log_dir: 
+ gpu_id:
+  0
+ arch:
+  lenet
+ workers:
+  16
+ logging:
+  True
+ log_dir:
   logs
  smooth_eps:
   0.0
@@ -70,27 +70,27 @@ general:
 pretrain:
  lr:
   0.1
- epochs: 
-  40
+ epochs:
+  100
  warmup_lr:
   0.0001
- warmup_epochs: 
-  0
- save_model: 
-  lenet_bn_pretrained.pt
+ warmup_epochs:
+  5
+ save_model:
+  lenet_pretrain_1.pt
  optimizer:
   adam
- lr_scheduler: 
+ lr_scheduler:
   default
 admm:
  lr:
   0.01
  epochs:
-  40
+  100
  save_model:
-  lenet_bn_admm.pt
- load_model: 
-  lenet_bn_pretrained.pt 
+  lenet_admm_1.pt
+ load_model:
+  lenet_pretrain_1.pt
  optimizer:
   sgd
  lr_scheduler:
@@ -109,15 +109,15 @@ retrain:
  lr:
   0.01
  epochs:
-  40
+  100
  warmup_lr:
   0.0001
  warmup_epochs:
-  0
+  5
  save_model:
-  lenet_bn_retrained.pt
+  lenet_retrained_1.pt
  load_model:
-  lenet_bn_admm.pt
+  lenet_admm_1.pt
  optimizer:
   adam
  lr_scheduler:
@@ -136,92 +136,14 @@ lenet:
       0.93
 lenet_bn:
   prune_ratios:
-    bn1.weight:   # if sparsity type is bn_filter, use bn{i} 
+    bn1.weight:   # if sparsity type is bn_filter, use bn{i}
       0.8         # if sparsity type is filter , use conv{i}
     bn2.weight:
       0.947
 
 lenet_adv:
   prune_ratios:
-    conv1.weight:   # if sparsity type is bn_filter, use bn{i} 
+    conv1.weight:   # if sparsity type is bn_filter, use bn{i}
       0.8         # if sparsity type is filter , use conv{i}
     conv2.weight:
       0.947
-resnet18:
-#20 conv layers, use bnx instead of convx for bn_filter pruning
-#floats
- prune_ratios:
-  bn1.weight:
-   0.9375
-  bn2.weight:
-   0.9375
-  bn3.weight:
-   0.9375
-  bn3.weight:
-   0.9375
-  bn4.weight:
-   0.9375
-  bn5.weight:
-   0.9375
-  bn6.weight:
-   0.9375
-  bn7.weight:
-   0.9375
-  bn8.weight:
-   0.9375
-  bn9.weight:
-   0.9375
-  bn10.weight:
-   0.9375
-  bn11.weight:
-   0.9375
-  bn12.weight:
-   0.9375
-  bn13.weight:
-   0.9375
-  bn14.weight:
-   0.9375
-  bn15.weight:
-   0.9375
-  bn16.weight:
-   0.9375
-  bn17.weight:
-   0.9375
-  bn18.weight:
-   0.9375
-  bn19.weight:
-   0.9375
-  bn20.weight:
-   0.9375
-vgg16:
-#20 conv layers, use bnx instead of convx for bn_filter pruning
-#floats
- prune_ratios:
-  bn1.weight:
-   0.9375
-  bn2.weight:
-   0.9375
-  bn3.weight:
-   0.9375
-  bn3.weight:
-   0.9375
-  bn4.weight:
-   0.9375
-  bn5.weight:
-   0.9375
-  bn6.weight:
-   0.9375
-  bn7.weight:
-   0.9375
-  bn8.weight:
-   0.9375
-  bn9.weight:
-   0.9375
-  bn10.weight:
-   0.9375
-  bn11.weight:
-   0.9375
-  bn12.weight:
-   0.9375
-  bn13.weight:
-   0.9375

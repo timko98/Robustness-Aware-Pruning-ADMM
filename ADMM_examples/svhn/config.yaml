@@ -53,7 +53,7 @@ general:
  gpu_id:  
   0
  arch: 
-  vgg16
+  resnet18_adv
  workers: 
   16
  logging: 
@@ -87,7 +87,7 @@ admm:
  save_model: 
   vgg16_admm_no_warmup_lr_0_01.pt
  load_model: 
-  vgg16_hydra_svhn.pth.tar
+  resnet18_hydra_svhn.pth.tar
  optimizer:
   adam
  lr_scheduler: 

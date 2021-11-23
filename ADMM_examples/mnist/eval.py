@@ -1,5 +1,7 @@
 from __future__ import print_function
 import argparse
+from collections import OrderedDict
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -119,20 +121,25 @@ def main():
     device = torch.device("cuda" if use_cuda else "cpu")
 
 
-    model = LeNet_adv(w=16).to(device)
+    model = LeNet_adv(4).to(device)
     model = AttackPGD(model)
     
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
         
-    load_model = 'lenet_adv_retrained_w16_pruned.pt'
-        
+    load_model = 'lenet_adv_retrained_4_83_no_masked_pro_adam_opt_conv_only.pt'
         # unlike resume, load model does not care optimizer status or start_epoch
     print('==> Loading from {}'.format(load_model))
 
+    # print('==> Correcting dict keys..')
+    #loaded_model = OrderedDict((f"basic_model.{k}",v) for k,v in torch.load(load_model, map_location={'cuda:0': 'cuda:{}'.format(gpu)}).items())
+
+
     model.load_state_dict(torch.load(load_model,map_location = {'cuda:0':'cuda:{}'.format(gpu)}))
+    # model.load_state_dict(loaded_model)
+
     
-    print (model)
+    print(model)
 
     test(model,device,test_loader)
 

@@ -215,12 +215,12 @@ def main():
     model.cuda(gpu)
     criterion = CrossEntropyLossMaybeSmooth(smooth_eps=0.0).cuda(gpu) 
        
-    load_model = 'BEST_resnet18_retrain_weight_10_harp_strategy.pt'
+    load_model = 'resnet18_adv_w1.pt'
         
         # unlike resume, load model does not care optimizer status or start_epoch
     print('==> Loading from {}'.format(load_model))
 
-    model.load_state_dict(torch.load(load_model,map_location = {'cuda:0':'cuda:{}'.format(gpu)})['net'])
+    model.load_state_dict(torch.load(load_model,map_location = {'cuda:0':'cuda:{}'.format(gpu)}))
     
 
 
