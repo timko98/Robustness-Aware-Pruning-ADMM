@@ -94,9 +94,9 @@ class WideResNet(nn.Module):
             n, nChannels[0], nChannels[1], block, 1, dropRate
         )
         # 1st sub-block
-        self.sub_block1 = NetworkBlock(
-            n, nChannels[0], nChannels[1], block, 1, dropRate
-        )
+        # self.sub_block1 = NetworkBlock(
+        #     n, nChannels[0], nChannels[1], block, 1, dropRate
+        # )
         # 2nd block
         self.block2 = NetworkBlock(
             n, nChannels[1], nChannels[2], block, 2, dropRate

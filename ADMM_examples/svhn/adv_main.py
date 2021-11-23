@@ -19,7 +19,7 @@ from config import Config
 
 sys.path.append('../../') # append root directory
 
-from ADMM_examples.cifar10.models.wrn import Wide_ResNet_28_4
+from ADMM_examples.svhn.models.wrn import Wide_ResNet_28_4
 
 from admm.warmup_scheduler import GradualWarmupScheduler
 from admm.cross_entropy import CrossEntropyLossMaybeSmooth
@@ -226,8 +226,8 @@ if config.load_model:
         # config.model.load_state_dict(state_dict)
         # qi pretrained model
         state_dict = torch.load(config.load_model, map_location=torch.device(f'cuda:{config.gpu}'))['state_dict']
-        print(state_dict.keys())
-        state_dict = {f"module.basic_model.{k}": v for k, v in state_dict.items() if k.find('popup_scores') == -1}
+        # print(state_dict.keys()))
+        state_dict = {f"module.basic_model.{k}": v for k, v in state_dict.items() if k.find('popup_scores') == -1 and k.find("sub_block") == -1}
         config.model.load_state_dict(state_dict)
     
 
@@ -245,7 +245,7 @@ if config.admm:
 if config.resume:
     # Load checkpoint.
     print('==> Resuming from checkpoint..')
-    assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
+    # assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
     checkpoint = torch.load(f"checkpoint_{config.save_model}")
     print(checkpoint.keys())
     config.model.load_state_dict(checkpoint['net'])

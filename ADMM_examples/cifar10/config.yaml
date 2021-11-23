@@ -1,4 +1,4 @@
-#config example:
+p#config example:
 #Authors: Shaokai, Jan
 #sample_argument:
 #type || default value
@@ -45,15 +45,15 @@ adv:
     default
 general:
  sparsity_type: 
-  column
+  irregular
  print_freq:
   10 
  resume:  
   False
- gpu_id:  
-  0
+ gpu_id:   # 0 = weight 1, 1 = weight 10, 2 = channel 10, 3 = channel 50
+  1
  arch: 
-  wrn_28_4
+  vgg16
  workers: 
   16
  logging: 
@@ -83,11 +83,11 @@ admm:
  lr:  
   0.01
  epochs: 
-  200
+  100
  save_model: 
-  vgg16_admm_no_warmup_lr_0_01.pt
+  vgg16_admm_weight_1_svhn.pth.tar
  load_model: 
-  wrn284_pretrained.pth.tar
+  vgg16_hydra_svhn.pth.tar
  optimizer:
   adam
  lr_scheduler: 
@@ -106,15 +106,15 @@ retrain:
  lr:  
   0.01
  epochs:
-  200
+  100
  warmup_lr:
   0.0001
  warmup_epochs: 
   15
  save_model: 
-  vgg16_retrain_no_warmup_lr_0_01.pt
+  wrn284_retrain_channel_50_HARP.pth.tar
  load_model:
-  vgg16_admm_no_warmup_lr_0_01.pt
+  wrn284_admm_channel_50_HARP.pth.tar
  optimizer: 
   adam
  lr_scheduler:
@@ -165,93 +165,100 @@ resnet18_adv:
    0.5
   conv20.weight:
    0.5
-vgg16_adv:
+vgg16: 
 #20 conv layers, use bnx instead of convx for bn_filter pruning
 #floats
  prune_ratios:
   conv1.weight:
-   0.5
+   0.93 
   conv2.weight:
-   0.5
+   0.971548396
   conv3.weight:
-   0.5
+   0.84349284
   conv4.weight:
-   0.5
+   0.93748334
   conv5.weight:
-   0.5
+   0.93822534
   conv6.weight:
-   0.5
+   0.961771745
   conv7.weight:
-   0.5
+   0.963571927
   conv8.weight:
-   0.5
+   0.9951997964
   conv9.weight:
-   0.5
+   0.995002206
   conv10.weight:
-   0.5
+   0.9950017964
   conv11.weight:
-   0.5
+   0.9952206
   conv12.weight:
-   0.5
+   0.9969997964
   conv13.weight:
-   0.5
+   0.995002206
+  fc1.weight:
+   0.9951991608
+  fc2.weight:
+   0.99504883
+  fc3.weight:
+   0.994921875
+
 wrn_28_4:
  prune_ratios:
   conv1.weight:
-   0.5
+   0
   conv2.weight:
-   0.5
+   0.0625
   conv3.weight:
-   0.5
+   0.125
   conv4.weight:
-   0.5
+   0.0625
   conv5.weight:
-   0.5
+   0.015625
   conv6.weight:
-   0.5
+   0
   conv7.weight:
-   0.5
+   0.09375
   conv8.weight:
-   0.5
+   0.015625
   conv9.weight:
-   0.5
+   0
   conv10.weight:
-   0.5
+   0
   conv11.weight:
-   0.5
+   0
   conv12.weight:
-   0.5
+   0.6484375
   conv13.weight:
-   0.5
+   0
   conv14.weight:
-   0.5
+   0.5625
   conv15.weight:
-   0.5
+   0.6875
   conv16.weight:
-   0.5
+   0.71875
   conv17.weight:
-   0.5
+   0.859375
   conv18.weight:
-   0.5
+   0.6875
   conv19.weight:
-   0.5
+   0.65625
   conv20.weight:
-   0.5
+   0.46875
   conv21.weight:
-   0.5
+   0.53275
   conv22.weight:
-   0.5
+   0.53125
   conv23.weight:
-   0.5
+   0.59375
   conv24.weight:
-   0.5
+   0.6331875
   conv25.weight:
-   0.5
+   0.73984375
   conv26.weight:
-   0.5
+   0.803125
   conv27.weight:
-   0.5
+   0.546875
   conv28.weight:
-   0.5
-  conv29.weight:
-   0.5
+   0.300000000000000049296875
+  fc1.weight:
+   0.23046875

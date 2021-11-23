@@ -4,6 +4,6 @@
 #python -u main.py --config_file config.yaml --stage retrain
 
 #admm compression in adversarial setting
-# python -u adv_main.py --config_file config.yaml --stage pretrain &> logs/vgg16_pretrain_no_warmup.log
-python -u adv_main.py --config_file config.yaml --stage admm # &> logs/wrn_28_4_admm_tes.log
-# python -u adv_main.py --config_file config.yaml --stage retrain &> logs/resnet18_4_to_2_retrain_all_layers_column_200_epochs.log
+# python -u adv_main.py --config_file config.yaml --stage pretrain 2>&1 | tee logs/vgg16_pretrain_new_adam.log
+python -u adv_main.py --config_file config.yaml --stage admm 2>&1 | tee -a logs/resnet18_admm_weight_1_svhn_HARP.log
+python -u adv_main.py --config_file config.yaml --stage retrain 2>&1 | tee -a logs/resnet18_retrain_weight_1_svhn_HARP.log
