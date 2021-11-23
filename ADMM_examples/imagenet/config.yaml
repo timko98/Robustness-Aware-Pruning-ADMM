@@ -71,6 +71,18 @@ general:
   logs
  smooth_eps:
   0.0
+ epsilon:
+  0.0156 (4/255)
+ n_repeats:
+  4
+ pgd_steps:
+  10
+ pgd_epsilon:
+  0.031372549
+ pgd_random_start:
+  True
+ pgd_step_size:
+  0.007843137
  alpha:
   0.0
  verify:
@@ -98,7 +110,7 @@ admm:
  save_model: 
   resnet50_admm.pt
  load_model: 
-
+  resnet50_pretrained.pt
  optimizer:
   sgd
  lr_scheduler: 

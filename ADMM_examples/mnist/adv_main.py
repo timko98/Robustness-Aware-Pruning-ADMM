@@ -17,6 +17,8 @@ from lenet_adv import LeNet_adv
 
 sys.path.append("../../") # append root directory
 
+from admm.warmup_scheduler import GradualWarmupScheduler
+
 from config import Config
 
 from admm.init_func import Init_Func
@@ -60,7 +62,6 @@ def train(config,ADMM,device,train_loader,optimizer,epoch):
             mixed_loss.backward()
         else:
             adv_loss.backward()
-            #nat_loss.backward()
             
         if config.masked_progressive:
             with torch.no_grad():            
@@ -73,6 +74,9 @@ def train(config,ADMM,device,train_loader,optimizer,epoch):
             with torch.no_grad():
                 for name,W in config.model.named_parameters():
                     if name in config.masks:
+                            # weights = W.cpu().detach().numpy()
+                            # print(weights.shape)
+                            # print(config.masks[name].cpu().detach().numpy())
                             W.grad *=config.masks[name]
 
            
@@ -259,14 +263,17 @@ def main():
     if config.admm:
         ADMM = admm.ADMM(config)
 
+    config.warmup = (not config.admm) and config.warmup_epochs > 0
+    optimizer_init_lr = config.warmup_lr if config.warmup else config.lr
     optimizer = None
+
     if (config.optimizer == 'sgd'):
-        optimizer = torch.optim.SGD(config.model.parameters(), config.lr,
+        optimizer = torch.optim.SGD(config.model.parameters(), optimizer_init_lr,
                                 momentum=0.9,
                                     weight_decay=1e-6)
 
     elif (config.optimizer =='adam'):
-        optimizer = torch.optim.Adam(config.model.parameters(),config.lr)    
+        optimizer = torch.optim.Adam(config.model.parameters(),optimizer_init_lr)
 
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.epochs*len(train_loader),eta_min=4e-08)
 
@@ -312,7 +319,16 @@ def main():
                         param_group['lr'] = config.lr
             else:
                 pass # it uses adam
-            
+
+        total_weights = 0
+        zero_weights = 0
+        for param in model.parameters():
+            if param is not None:
+                total_weights += param.numel()
+                zero_weights += param.numel() - param.nonzero().size(0)
+
+        print(f"Total number of weights: {total_weights}")
+        print(f"Total number of zero weights: {zero_weights}")
         train(config,ADMM,device, train_loader, optimizer, epoch)
         test(config, device, test_loader)
         
