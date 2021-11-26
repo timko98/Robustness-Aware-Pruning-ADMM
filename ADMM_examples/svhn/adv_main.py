@@ -1,4 +1,4 @@
-'''Train CIFAR10 with PyTorch.'''
+'''Train SVHN with PyTorch.'''
 from __future__ import print_function
 import json
 import torch
@@ -95,6 +95,20 @@ class AttackPGD(nn.Module):
             x = torch.clamp(x, 0, 1)
 
         return self.basic_model(input), self.basic_model(x) , x
+
+def fgsm(model, input, target, step_size):
+    x = input.detach()
+    x.requires_grad_()
+
+    with torch.enable_grad():
+        logits = model(x)
+        loss = F.cross_entropy(logits, target, size_average=False)
+    grad = torch.autograd.grad(loss, [x])[0]
+
+    x = x.detach() + step_size*torch.sign(grad.detach())
+    x = torch.clamp(x, 0, 1)
+
+    return model(input), model(x), x
 
 parser = argparse.ArgumentParser(description='PyTorch SVHN Training')
 parser.add_argument('--config_file', type=str, default='', help ="config file")
@@ -262,7 +276,8 @@ config.smooth = config.smooth_eps > 0.0
 config.mixup = config.alpha > 0.0
 
 
-config.warmup = (not config.admm) and config.warmup_epochs > 0
+# config.warmup = (not config.admm) and config.warmup_epochs > 0
+config.warmup = config.warmup_epochs > 0
 optimizer_init_lr = config.warmup_lr if config.warmup else config.lr
 
 optimizer = None
@@ -289,8 +304,8 @@ elif config.lr_scheduler == 'default':
 else:
     raise Exception("unknown lr scheduler")
 
-if config.warmup:
-    scheduler = GradualWarmupScheduler(optimizer, multiplier=config.lr/config.warmup_lr, total_iter=config.warmup_epochs*len(trainloader), after_scheduler=scheduler)
+# if config.warmup:
+#     scheduler = GradualWarmupScheduler(optimizer, multiplier=config.lr/config.warmup_lr, total_iter=config.warmup_epochs*len(trainloader), after_scheduler=scheduler)
 
 
 def train(train_loader,criterion, optimizer, epoch, config):
@@ -326,7 +341,10 @@ def train(train_loader,criterion, optimizer, epoch, config):
             input, target_a, target_b, lam = mixup_data(input, target, config.alpha)
 
         # compute output
-        nat_output,adv_output,pert_inputs = config.model(input,target)
+        if config.warmup and (epoch < config.warmup_epochs):
+            nat_output, adv_output, pert_inputs = fgsm(config.model.module.basic_model, input, target, float(2/255))
+        else:
+            nat_output,adv_output,pert_inputs = config.model(input,target)
 
         if config.mixup:
             adv_loss = mixup_criterion(criterion, adv_output, target_a, target_b, lam, config.smooth)

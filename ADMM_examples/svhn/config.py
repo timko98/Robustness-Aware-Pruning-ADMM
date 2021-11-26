@@ -52,9 +52,11 @@ class Config:
                 self.epochs = raw_dict[stage]['epochs']
 
 
-                if stage !='admm':
-                    self.warmup_epochs = raw_dict[stage]['warmup_epochs']
-                    self.warmup_lr = raw_dict[stage]['warmup_lr']
+                # if stage !='admm':
+                #     self.warmup_epochs = raw_dict[stage]['warmup_epochs']
+                #     self.warmup_lr = raw_dict[stage]['warmup_lr']
+                self.warmup_epochs = raw_dict['pretrain']['warmup_epochs']
+                self.warmup_lr = raw_dict['pretrain']['warmup_lr']
                 
                 self.admm = (stage == 'admm')
                 self.masked_retrain = (stage =='retrain')
