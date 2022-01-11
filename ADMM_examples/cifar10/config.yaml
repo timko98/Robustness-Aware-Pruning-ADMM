@@ -1,4 +1,4 @@
-p#config example:
+#config example:
 #Authors: Shaokai, Jan
 #sample_argument:
 #type || default value
@@ -45,13 +45,13 @@ adv:
     default
 general:
  sparsity_type: 
-  irregular
+  column
  print_freq:
   10 
  resume:  
   False
  gpu_id:   # 0 = weight 1, 1 = weight 10, 2 = channel 10, 3 = channel 50
-  1
+  0
  arch: 
   vgg16
  workers: 
@@ -85,11 +85,11 @@ admm:
  epochs: 
   100
  save_model: 
-  vgg16_admm_weight_1_svhn.pth.tar
+  vgg16_admm_channel_10_TEST_cifar10.pth.tar
  load_model: 
-  vgg16_hydra_svhn.pth.tar
+  vgg16_pretrained_qi.pth.tar
  optimizer:
-  adam
+  sgd
  lr_scheduler: 
   default
  admm_epoch: 
@@ -116,7 +116,7 @@ retrain:
  load_model:
   wrn284_admm_channel_50_HARP.pth.tar
  optimizer: 
-  adam
+  sgd
  lr_scheduler:
   default
  masked_progressive: 
@@ -165,42 +165,44 @@ resnet18_adv:
    0.5
   conv20.weight:
    0.5
+  fc1.weight:
+   0.5
 vgg16: 
 #20 conv layers, use bnx instead of convx for bn_filter pruning
 #floats
  prune_ratios:
   conv1.weight:
-   0.93 
+   0.9
   conv2.weight:
-   0.971548396
+   0.9
   conv3.weight:
-   0.84349284
+   0.9
   conv4.weight:
-   0.93748334
+   0.9
   conv5.weight:
-   0.93822534
+   0.9
   conv6.weight:
-   0.961771745
+   0.9
   conv7.weight:
-   0.963571927
+   0.9
   conv8.weight:
-   0.9951997964
+   0.9
   conv9.weight:
-   0.995002206
+   0.9
   conv10.weight:
-   0.9950017964
+   0.9
   conv11.weight:
-   0.9952206
+   0.9
   conv12.weight:
-   0.9969997964
+   0.9
   conv13.weight:
-   0.995002206
+   0.9
   fc1.weight:
-   0.9951991608
+   0.9
   fc2.weight:
-   0.99504883
+   0.9
   fc3.weight:
-   0.994921875
+   0.9
 
 wrn_28_4:
  prune_ratios:

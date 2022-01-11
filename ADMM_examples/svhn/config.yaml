@@ -45,7 +45,7 @@ adv:
     default
 general:
  sparsity_type: 
-  irregular
+  column
  print_freq:
   10 
  resume:  
@@ -53,7 +53,7 @@ general:
  gpu_id:   # 0 = weight 1, 1 = weight 10, 2 = channel 10, 3 = channel 50
   0
  arch: 
-  resnet18_adv
+  vgg16
  workers: 
   16
  logging: 
@@ -76,7 +76,7 @@ pretrain:
  save_model: 
   vgg16_admm_no_warmup_lr_0_01.pt
  optimizer:
-  adam
+  sgd
  lr_scheduler: 
   default
 admm:
@@ -85,11 +85,11 @@ admm:
  epochs: 
   100
  save_model: 
-  resnet18_admm_weight_10_svhn_HARP_fgsm_warumup_epsilon2forwarmup.pth.tar
+  vgg16_admm_channel_50_svhn_HARP_fgsm_warmup.pth.tar
  load_model: 
-  resnet18_hydra_svhn.pth.tar
+  vgg16_hydra_svhn.pth.tar
  optimizer:
-  adam
+  sgd
  lr_scheduler: 
   default
  admm_epoch: 
@@ -110,13 +110,13 @@ retrain:
  warmup_lr:
   0.01
  warmup_epochs: 
-  20
+  0
  save_model: 
-  resnet18_retrain_channel_50_svhn_HARP.pth.tar
+  vgg16_retrain_channel_10_svhn_fgsm_warmup.pth.tar
  load_model:
-  resnet18_admm_channel_50_svhn_HARP.pth.tar
+  vgg16_admm_channel_10_svhn_fgsm_warmup.pth.tar
  optimizer: 
-  adam
+  sgd
  lr_scheduler:
   default
  masked_progressive: 
@@ -126,83 +126,83 @@ resnet18_adv:
 #floats
  prune_ratios:
   conv1.weight:
-   0.92918055
+   0
   conv2.weight:
-   0.95022244
+   0.5
   conv3.weight:
-   0.91143279
+   0.5635
   conv4.weight:
-   0.91458485
+   0.5
   conv5.weight:
-   0.91789195
+   0.59425
   conv6.weight:
-   0.88444127
+   0.5
   conv7.weight:
-   0.897861014
+   0.5
   conv8.weight:
-   0.927353906
+   0.5
   conv9.weight:
-   0.903313595
+   0.5716875
   conv10.weight:
-   0.90840723
+   0.9466875
   conv11.weight:
-   0.8650971
+   0.966875
   conv12.weight:
-   0.899025335
+   0.95078125
   conv13.weight:
-   0.90261211
+   0.8046875
   conv14.weight:
-   0.87359999999999998518
+   0.9578125
   conv15.weight:
-   0.9509576
+   0.9578125
   conv16.weight:
-   0.90388259
+   0.9578125
   conv17.weight:
-   0.93745071
+   0.95078125
   conv18.weight:
-   0.92999806
+   0.9578125
   conv19.weight:
-   0.90938404
+   0.94938125
   conv20.weight:
-   0.88546665
+   0.9578125
   fc1.weight:
-   0.87826562
+   0.9578125
 vgg16: 
 #20 conv layers, use bnx instead of convx for bn_filter pruning
 #floats
  prune_ratios:
   conv1.weight:
-   0.5
+   0
   conv2.weight:
-   0.5
+   0.0469000000000000525
   conv3.weight:
-   0.5
+   0.0999999999999999853125
   conv4.weight:
-   0.5
+   0
   conv5.weight:
-   0.5
+   0
   conv6.weight:
-   0.5
+   0
   conv7.weight:
-   0.5
+   0.03515699999999999475
   conv8.weight:
-   0.5
+   0.01953125
   conv9.weight:
-   0.5
+   0.5078125
   conv10.weight:
-   0.5
+   0.58204875
   conv11.weight:
-   0.5
+   0.60742188
   conv12.weight:
-   0.5
+   0.73828129999999995
   conv13.weight:
-   0.5
+   0.74609379999999995
   fc1.weight:
-   0.5
+   0.65527350000000016
   fc2.weight:
-   0.5
+   0.65234379999999995
   fc3.weight:
-   0.5
+   0.55078275
 wrn_28_4:
  prune_ratios:
   conv1.weight:

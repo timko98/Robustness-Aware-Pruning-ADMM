@@ -17,10 +17,10 @@ import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
-import torchvision.models as models
-from alexnet_bn import AlexNet_BN
+# import torchvision.models as models
 import numpy as np
 from numpy import linalg as LA
+import models
 from config import Config
 from torch.autograd import Variable
 
@@ -33,14 +33,14 @@ import admm
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-model_names = sorted(name for name in models.__dict__
-                     if name.islower() and not name.startswith("__")
-                     and callable(models.__dict__[name]))
-
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 
 parser.add_argument('--config_file', type=str, default='', help="define config file")
 parser.add_argument('--stage', type=str, default='', help="select the pruning stage")
+parser.add_argument('--uniform', action='store_true', help="set if uniform pruning is desired")
+parser.add_argument('--sparsity_type', type=str, default='', choices=["column", "weight"], required=True,
+                    help="Set sparsity type")
+parser.add_argument('--pruning_rate', type=float, choices=[0.01, 0.1, 0.5], required=True, help="Set the pruning rate")
 
 
 class AverageMeter(object):
@@ -77,7 +77,7 @@ class FreeAT(nn.Module):
         self.std = torch.Tensor(np.array(self.std)[:, np.newaxis, np.newaxis])
         self.std = self.std.expand(3, self.image_dim, self.image_dim).to(device)
 
-    def forward(self, input, target):
+    def forward(self, input):
         x = input.detach()
         noise_batch = Variable(
             self.global_noise_data[0: x.size(0)], requires_grad=True
@@ -85,8 +85,9 @@ class FreeAT(nn.Module):
         in1 = input + noise_batch
         in1.clamp_(0, 1.0)
         in1.sub_(self.mean).div_(self.std)
+        input.sub_(self.mean).div_(self.std)
 
-        return self.basic_model(input), self.basic_model(in1), in1, noise_batch
+        return self.basic_model(input), self.basic_model(in1), noise_batch
 
 
 best_mean_loss = 100.
@@ -136,6 +137,8 @@ def main_worker(gpu, ngpus_per_node, config):
 
     if config.gpu is not None:
         print("Use GPU: {} for training".format(config.gpu))
+        gpu_list = [int(i) for i in str(config.gpu).strip().split(",")]
+        device = torch.device(f"cuda:{gpu_list[0]}")
 
     if config.distributed:
         if config.dist_url == "env://" and config.rank == -1:
@@ -168,42 +171,53 @@ def main_worker(gpu, ngpus_per_node, config):
             for i, (name, W) in enumerate(model.named_parameters()):
                 print(name)
         else:
-            model = models.__dict__[config.arch]()
-            print(model)
+            # model = ResNet50()
+            if len(gpu_list) > 1:
+                print("Using multiple gpus")
+                model = nn.DataParallel(
+                    models.__dict__[config.arch](), gpu_list,
+                ).to(device)
+                print(model)
+            else:
+                model = models.__dict__[config.arch]().to(device)
+                print(model)
 
     if config.distributed:
         # For multiprocessing distributed, DistributedDataParallel constructor
         # should always set the single device scope, otherwise,
         # DistributedDataParallel will use all available devices.
         if config.gpu is not None:
-            torch.cuda.set_device(config.gpu)
-            model.cuda(config.gpu)
+            torch.cuda.set_device(config.gpu[0])
+            model.cuda(config.gpu[0])
             # When using a single GPU per process and per
             # DistributedDataParallel, we need to divide the batch size
             # ourselves based on the total number of GPUs we have
             config.batch_size = int(config.batch_size / ngpus_per_node)
             config.workers = int(config.workers / ngpus_per_node)
-            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[config.gpu])
+            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu_list])
         else:
             model.cuda()
             # DistributedDataParallel will divide and allocate batch_size to all
             # available GPUs if device_ids are not set
             model = torch.nn.parallel.DistributedDataParallel(model)
     elif config.gpu is not None:
-        torch.cuda.set_device(config.gpu)
-        model = model.cuda(config.gpu)
+        print("GPU not None")
+        # torch.cuda.set_device(config.gpu)
+        # model = model.cuda(config.gpu)
     else:
         # DataParallel will divide and allocate batch_size to all available GPUs
-        if config.arch.startswith('alexnet') or config.arch.startswith('vgg'):
+        if config.arch.startswith('alexnet') or config.arch.startswith('vgg') or config.arch.startswith('resnet'):
+            print("Data Parallel")
             model.features = torch.nn.DataParallel(model.features)
             model.cuda()
         else:
-
             model = torch.nn.DataParallel(model).cuda()
+
     config.model = FreeAT(model, config)
     # define loss function (criterion) and optimizer
 
-    criterion = CrossEntropyLossMaybeSmooth(smooth_eps=config.smooth_eps).cuda(config.gpu)
+    # criterion = CrossEntropyLossMaybeSmooth(smooth_eps=config.smooth_eps).cuda(config.gpu)
+    criterion = CrossEntropyLossMaybeSmooth(smooth_eps=config.smooth_eps)
 
     config.smooth = config.smooth_eps > 0.0
     config.mixup = config.alpha > 0.0
@@ -213,10 +227,15 @@ def main_worker(gpu, ngpus_per_node, config):
     if config.load_model:
         if os.path.isfile(config.load_model):
             if (config.gpu):
-                model.load_state_dict(
-                    torch.load(config.load_model, map_location={'cuda:0': 'cuda:{}'.format(config.gpu)}))
+                print(f"Loading state dict from {config.load_model} to device")
+                state_dict = torch.load(config.load_model, map_location=device)['state_dict']
+                # state_dict = dict([(k.replace("module.", ""), state_dict[k]) for k in state_dict])
+                model.load_state_dict(state_dict)
             else:
-                model.load_state_dict(torch.load(config.load_model))
+                print(f"Loading state dict from {config.load_model}")
+                state_dict = torch.load(config.load_model)['state_dict']
+                state_dict = dict([(k.replace("module.", ""), state_dict[k]) for k in state_dict])
+                model.load_state_dict(state_dict)
         else:
             print("=> no checkpoint found at '{}'".format(config.resume))
 
@@ -244,24 +263,29 @@ def main_worker(gpu, ngpus_per_node, config):
     if config.resume:
         ## will add logic for loading admm variables
         if os.path.isfile(config.resume):
-            print("=> loading checkpoint '{}'".format(config.resume))
-            checkpoint = torch.load(config.resume)
+            print("=> loading checkpoint '{}'".format(f"checkpoint_{config.save_model}"))
+            checkpoint = torch.load(f"checkpoint_{config.save_model}")
             config.start_epoch = checkpoint['epoch']
+            global best_mean_loss
             best_mean_loss = checkpoint['best_mean_loss']
 
-            ADMM.ADMM_U = checkpoint['admm']['ADMM_U']
-            ADMM.ADMM_Z = checkpoint['admm']['ADMM_Z']
+            if ADMM:
+                ADMM.ADMM_U = checkpoint['admm']['ADMM_U']
+                ADMM.ADMM_Z = checkpoint['admm']['ADMM_Z']
 
             model.load_state_dict(checkpoint['net'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             print("=> loaded checkpoint '{}' (epoch {})"
-                  .format(config.resume, checkpoint['epoch']))
+                  .format(f"checkpoint_{config.save_model}", checkpoint['epoch']))
         else:
-            print("=> no checkpoint found at '{}'".format(config.resume))
+            print("=> no checkpoint found at '{}'".format(f"checkpoint_{config.save_model}"))
 
     cudnn.benchmark = True
 
     # Data loading code
+    # TODO reset
+    # traindir = os.path.join(config.data, 'val2')
+    # valdir = os.path.join(config.data, 'val2')
     traindir = os.path.join(config.data, 'train')
     valdir = os.path.join(config.data, 'val')
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -273,7 +297,7 @@ def main_worker(gpu, ngpus_per_node, config):
             transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            normalize,
+            # normalize,
         ]))
 
     if config.distributed:
@@ -283,17 +307,17 @@ def main_worker(gpu, ngpus_per_node, config):
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=config.batch_size, shuffle=(train_sampler is None),
-        num_workers=config.workers, pin_memory=True, sampler=train_sampler)
+        num_workers=8, pin_memory=True, sampler=train_sampler)
 
     val_loader = torch.utils.data.DataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
-            normalize,
+            # normalize,
         ])),
         batch_size=config.batch_size, shuffle=False,
-        num_workers=config.workers, pin_memory=True)
+        num_workers=4, pin_memory=True)
 
     scheduler = None
     if config.lr_scheduler == 'cosine':
@@ -310,14 +334,13 @@ def main_worker(gpu, ngpus_per_node, config):
                                            total_iter=config.warmup_epochs * len(train_loader),
                                            after_scheduler=scheduler)
 
-    if False:
-        validate(val_loader, criterion, config)
-        return
+    if config.admm:
+        validate(val_loader, criterion, config, ADMM, 0, optimizer)
 
     if config.verify:
         admm.masking(config)
         admm.test_sparsity(config)
-        validate(val_loader, criterion, config, 0)
+        validate(val_loader, criterion, config, ADMM, 0, optimizer)
         import sys
         sys.exit()
 
@@ -326,7 +349,7 @@ def main_worker(gpu, ngpus_per_node, config):
         admm.masking(config)
         print("before retrain starts")
         admm.test_sparsity(config)
-        validate(val_loader, criterion, config)
+        validate(val_loader, criterion, config, ADMM, 0, optimizer)
     if config.masked_progressive:
         admm.zero_masking(config)
     for epoch in range(config.start_epoch, config.epochs):
@@ -338,7 +361,7 @@ def main_worker(gpu, ngpus_per_node, config):
         train(train_loader, config, ADMM, criterion, optimizer, scheduler, epoch)
 
         # evaluate on validation set
-        acc1 = validate(val_loader, criterion, config, epoch, optimizer)
+        validate(val_loader, criterion, config, ADMM, epoch, optimizer)
 
         # # remember best acc@1 and save checkpoint
         # is_best = acc1 > best_acc1
@@ -359,12 +382,12 @@ def main_worker(gpu, ngpus_per_node, config):
         #                              }, is_best)
 
     # save last model for admm, optimizer detail is not necessary
-    if config.save_model and config.admm:
-        print('saving model {}'.format(config.save_model))
-        torch.save(config.model.state_dict(), config.save_model)
-    if config.masked_retrain:
-        print("after masked retrain")
-        admm.test_sparsity(config)
+    # if config.save_model and config.admm:
+    #     print('saving model {}'.format(config.save_model))
+    #     torch.save(config.model.state_dict(), config.save_model)
+    # if config.masked_retrain:
+    #     print("after masked retrain")
+    #     admm.test_sparsity(config)
 
 
 def fgsm(gradz, step_size):
@@ -377,7 +400,9 @@ def train(train_loader, config, ADMM, criterion, optimizer, scheduler, epoch):
     nat_losses = AverageMeter()
     adv_losses = AverageMeter()
     nat_top1 = AverageMeter()
+    nat_top5 = AverageMeter()
     adv_top1 = AverageMeter()
+    adv_top5 = AverageMeter()
 
     # switch to train mode
     config.model.train()
@@ -393,18 +418,16 @@ def train(train_loader, config, ADMM, criterion, optimizer, scheduler, epoch):
         else:
             scheduler.step()
 
-        input = input.cuda(config.gpu, non_blocking=True)
-        target = target.cuda(config.gpu)
+        input = input.cuda(device, non_blocking=True)
+        target = target.cuda(device, non_blocking=True)
         data = input
 
         if config.mixup:
             input, target_a, target_b, lam = mixup_data(input, target, config.alpha)
 
         # compute output with forward
-        # TODO check mean and std type if correct
-
         for _ in range(config.n_repeats):
-            nat_output, adv_output, pert_inputs, noise_batch = config.model(input)
+            nat_output, adv_output, noise_batch = config.model(input)
 
             if config.mixup:
                 adv_loss = mixup_criterion(criterion, adv_output, target_a, target_b, lam, config.smooth)
@@ -421,13 +444,15 @@ def train(train_loader, config, ADMM, criterion, optimizer, scheduler, epoch):
             # acc1, acc5 = accuracy(output, target, topk=(1, 5))
 
             # measure accuracy and record loss (NEW)
-            nat_acc1, _ = accuracy(nat_output, target, topk=(1, 5))
-            adv_acc1, _ = accuracy(adv_output, target, topk=(1, 5))
+            nat_acc1, nat_acc5 = accuracy(nat_output, target, topk=(1, 5))
+            adv_acc1, adv_acc5 = accuracy(adv_output, target, topk=(1, 5))
 
             nat_losses.update(nat_loss.item(), input.size(0))
             adv_losses.update(adv_loss.item(), input.size(0))
-            adv_top1.update(adv_acc1[0], input.size(0))
             nat_top1.update(nat_acc1[0], input.size(0))
+            adv_top1.update(adv_acc1[0], input.size(0))
+            nat_top5.update(nat_acc5[0], input.size(0))
+            adv_top5.update(adv_acc5[0], input.size(0))
 
             # compute gradient and do SGD step
             optimizer.zero_grad()
@@ -461,48 +486,67 @@ def train(train_loader, config, ADMM, criterion, optimizer, scheduler, epoch):
                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                       'Nat_Loss {nat_loss.val:.4f} ({nat_loss.avg:.4f})\t'
                       'Nat_Acc@1 {nat_top1.val:.3f} ({nat_top1.avg:.3f})\t'
+                      'Nat_Acc@5 {nat_top5.val:.3f} ({nat_top5.avg:.3f})\t'
                       'Adv_Loss {adv_loss.val:.4f} ({adv_loss.avg:.4f})\t'
                       'Adv_Acc@1 {adv_top1.val:.3f} ({adv_top1.avg:.3f})\t'
+                      'Adv_Acc@1 {adv_top5.val:.3f} ({adv_top5.avg:.3f})\t'
                     .format(
                     epoch, i, len(train_loader), batch_time=batch_time,
-                    data_time=data_time, nat_loss=nat_losses, nat_top1=nat_top1, adv_loss=adv_losses,
-                    adv_top1=adv_top1))
+                    data_time=data_time, nat_loss=nat_losses, nat_top1=nat_top1, nat_top5=nat_top5, adv_loss=adv_losses,
+                    adv_top1=adv_top1, adv_top5=adv_top5))
 
 
-def validate(val_loader, criterion, config, epoch, optimizer):
+def validate(val_loader, criterion, config, ADMM, epoch, optimizer):
+    print("Validating..")
+    # Mean/Std for normalization
+    mean = [0.485, 0.456, 0.406]
+    std = [0.229, 0.224, 0.225]
+    image_dim = 224
+    mean = torch.Tensor(np.array(mean)[:, np.newaxis, np.newaxis])
+    mean = mean.expand(3, image_dim, image_dim).to(device)
+    std = torch.Tensor(np.array(std)[:, np.newaxis, np.newaxis])
+    std = std.expand(3, image_dim, image_dim).to(device)
+
     batch_time = AverageMeter()
     nat_losses = AverageMeter()
     adv_losses = AverageMeter()
     nat_top1 = AverageMeter()
     adv_top1 = AverageMeter()
+    nat_top5 = AverageMeter()
+    adv_top5 = AverageMeter()
     model = config.model
     # switch to evaluate mode
     model.eval()
 
-    with torch.no_grad():
-        end = time.time()
-        for i, (input, target) in enumerate(val_loader):
+    end = time.time()
+    for i, (input, target) in enumerate(val_loader):
+        input = input.cuda(device, non_blocking=True)
+        target = target.cuda(device, non_blocking=True)
 
-            input = input.cuda(config.gpu, non_blocking=True)
-            target = target.cuda(config.gpu, non_blocking=True)
+        # Validate with PGD
+        orig_input = input.clone()
+        randn = torch.FloatTensor(input.size()).uniform_(-config.pgd_epsilon, config.pgd_epsilon).to(device)
+        input += randn
+        input.clamp_(0, 1.0)
+        for _ in range(config.pgd_steps):
+            invar = Variable(input, requires_grad=True)
+            in1 = invar - mean
+            in1.div_(std)
+            output = model.basic_model(in1)
+            ascend_loss = criterion(output, target)
+            ascend_grad = torch.autograd.grad(ascend_loss, invar)[0]
+            pert = fgsm(ascend_grad, config.pgd_step_size)
+            # Apply purturbation
+            input += pert.data
+            input = torch.max(orig_input - config.pgd_epsilon, input)
+            input = torch.min(orig_input + config.pgd_epsilon, input)
+            input.clamp_(0, 1.0)
 
-            # Validate with PGD
-            x = input.detach
-            if config.pgd_random_start:
-                x = x + torch.zeros_like(x).uniform_(-config.pgd_epsilon, config.pgd_epsilon)
-            for i in range(config.pgd_steps):
-                x.requires_grad_()
-                with torch.enable_grad():
-                    logits = model.basic_model(x)
-                    loss = F.cross_entropy(logits, target, size_average=False)
-                grad = torch.autograd.grad(loss, [x])[0]
-                x = x.detach() + config.pgd_step_size * torch.sign(grad.detach())
-                x = torch.min(torch.max(x, input - config.epsilon), input + config.epsilon)
-
-                x = torch.clamp(x, 0, 1)
-
-            nat_output = model.basic_model(input)
-            adv_output = model.basic_model(x)
+        input.sub_(mean).div_(std)
+        orig_input.sub_(mean).div_(std)
+        with torch.no_grad():
+            nat_output = model.basic_model(orig_input)
+            adv_output = model.basic_model(input)
 
             nat_loss = criterion(nat_output, target)
             adv_loss = criterion(adv_output, target)
@@ -514,63 +558,68 @@ def validate(val_loader, criterion, config, epoch, optimizer):
             adv_losses.update(adv_loss.item(), input.size(0))
             nat_top1.update(nat_acc1[0], input.size(0))
             adv_top1.update(adv_acc1[0], input.size(0))
+            nat_top5.update(nat_acc5[0], input.size(0))
+            adv_top5.update(adv_acc5[0], input.size(0))
 
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
 
-            if i % config.print_freq == 0:
-                print('Test: [{0}/{1}]\t'
-                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                      'Nat_Loss {nat_loss.val:.4f} ({nat_loss.avg:.4f})\t'
-                      'Nat_Acc@1 {nat_top1.val:.3f} ({nat_top1.avg:.3f})\t'
-                      'Adv_Loss {adv_loss.val:.4f} ({adv_loss.avg:.4f})\t'
-                      'Adv_Acc@1 {adv_top1.val:.3f} ({adv_top1.avg:.3f})\t'
-                    .format(
-                    i, len(val_loader), batch_time=batch_time, nat_loss=nat_losses,
-                    nat_top1=nat_top1, adv_loss=adv_losses, adv_top1=adv_top1))
+        if i % config.print_freq == 0:
+            print('Test: [{0}/{1}]\t'
+                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                  'Nat_Loss {nat_loss.val:.4f} ({nat_loss.avg:.4f})\t'
+                  'Nat_Acc@1 {nat_top1.val:.3f} ({nat_top1.avg:.3f})\t'
+                  'Nat_Acc@5 {nat_top5.val:.3f} ({nat_top5.avg:.3f})\t'
+                  'Adv_Loss {adv_loss.val:.4f} ({adv_loss.avg:.4f})\t'
+                  'Adv_Acc@1 {adv_top1.val:.3f} ({adv_top1.avg:.3f})\t'
+                  'Adv_Acc@5 {adv_top5.val:.3f} ({adv_top5.avg:.3f})\t'
+                .format(
+                i, len(val_loader), batch_time=batch_time, nat_loss=nat_losses,
+                nat_top1=nat_top1, nat_top5=nat_top5, adv_loss=adv_losses, adv_top1=adv_top1, adv_top5=adv_top5))
 
-        print(' * Nat_Acc@1 {nat_top1.avg:.3f} *Adv_Acc@1 {adv_top1.avg:.3f}'
-              .format(nat_top1=nat_top1, adv_top1=adv_top1))
+    print(' * Nat_Acc@1 {nat_top1.avg:.3f} *Adv_Acc@1 {adv_top1.avg:.3f}'
+          .format(nat_top1=nat_top1, adv_top1=adv_top1))
 
-        global best_mean_loss
-        global best_adv_acc
-        global best_nat_acc
-        mean_loss = (adv_losses.avg + nat_losses.avg) / 2
-        if mean_loss < best_mean_loss and not config.admm:
-            best_mean_loss = mean_loss
-            best_adv_acc = adv_top1
-            best_nat_acc = nat_top1
-            print('new best_mean_loss is {}'.format(mean_loss))
-            print('saving model {}'.format(config.save_model))
-            """
-            torch.save({
-                "net": config.model.state_dict(),
-                "epoch": (int(epoch)+1)
-            },config.save_model)
-            """
-            torch.save({
-                "net": config.model.state_dict()
-            }, f"BEST_{config.save_model}")
+    global best_mean_loss
+    global best_adv_acc
+    global best_nat_acc
+    mean_loss = (adv_losses.avg + nat_losses.avg) / 2
+    if mean_loss < best_mean_loss and not config.admm:
+        best_mean_loss = mean_loss
+        best_adv_acc = adv_top1
+        best_nat_acc = nat_top1
+        print('new best_mean_loss is {}'.format(mean_loss))
+        print('saving model {}'.format(config.save_model))
+        """
+        torch.save({
+            "net": config.model.state_dict(),
+            "epoch": (int(epoch)+1)
+        },config.save_model)
+        """
+        torch.save({
+            "net": config.model.state_dict()
+        }, f"BEST_{config.save_model}")
 
-        if config.save_model and config.admm:
-            print('saving checkpoint model checkpoint_{}'.format(config.save_model))
-            # torch.save(config.model.state_dict(),config.save_model)
-            torch.save({
-                "net": config.model.state_dict(),
-                "epoch": (int(epoch) + 1),
-                "admm": {'ADMM_U': ADMM.ADMM_U, 'ADMM_Z': ADMM.ADMM_Z},
-                "best_mean_loss": best_mean_loss,
-                "optimizer": optimizer.state_dict()
-            }, f"checkpoint_{config.save_model}")
+    if config.save_model and config.admm:
+        print('saving checkpoint model checkpoint_{}'.format(config.save_model))
+        # torch.save(config.model.state_dict(),config.save_model)
+        torch.save({
+            "net": config.model.state_dict(),
+            "epoch": (int(epoch) + 1),
+            "admm": {'ADMM_U': ADMM.ADMM_U, 'ADMM_Z': ADMM.ADMM_Z},
+            "best_mean_loss": best_mean_loss,
+            "optimizer": optimizer.state_dict()
+        }, f"checkpoint_{config.save_model}")
 
-        if config.save_model and not config.admm:
-            print('saving checkpoint model checkpoint_{}'.format(config.save_model))
-            torch.save({
-                "net": config.model.state_dict(),
-                "epoch": (int(epoch) + 1),
-                "best_loss": best_mean_loss,
-            }, f"checkpoint_{config.save_model}")
+    if config.save_model and not config.admm:
+        print('saving checkpoint model checkpoint_{}'.format(config.save_model))
+        torch.save({
+            "net": config.model.state_dict(),
+            "epoch": (int(epoch) + 1),
+            "best_mean_loss": best_mean_loss,
+            "optimizer": optimizer.state_dict()
+        }, f"checkpoint_{config.save_model}")
 
     return adv_top1.avg
 
@@ -600,7 +649,7 @@ def accuracy(output, target, topk=(1,)):
 
         res = []
         for k in topk:
-            correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+            correct_k = correct[:k].contiguous().view(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
 
