@@ -27,6 +27,7 @@ class Config:
         self.pruning_rate = args.pruning_rate
         self.rate_from_config = args.rate_from_config
         self.run_id = args.run_id
+        self.gpu = int(args.gpu)
         self.strategy_id = self.run_id
         self.strategy_id = f"{str(self.pruning_rate).replace('.', '')}_{self.strategy_id}"
 
@@ -56,6 +57,7 @@ class Config:
         print(f"Pruning rate from config file: {self.rate_from_config}")
         print(f"Load model: {self.load_model}")
         print(f"Save model: {self.save_model}")
+        print(f"GPU ID: {self.gpu}")
 
         strategies = json.load(open("strategies_harp_SVHN.json"))
         harp_stg = strategies[self.arch][self.sparsity_type][self.strategy_id]
@@ -109,7 +111,7 @@ class Config:
                 # general
                 self.print_freq = raw_dict['general']['print_freq']
                 self.resume = raw_dict['general']['resume']
-                self.gpu = raw_dict['general']['gpu_id']
+                # self.gpu = raw_dict['general']['gpu_id']
                 # self.arch = raw_dict['general']['arch']
                 self.workers = raw_dict['general']['workers']
                 self.logging = raw_dict['general']['logging']

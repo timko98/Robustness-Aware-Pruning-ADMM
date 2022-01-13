@@ -126,6 +126,7 @@ parser.add_argument('--sparsity_type', type=str, default='', choices=["column", 
 parser.add_argument('--pruning_rate', type=float, choices=[0.01, 0.1, 0.5], required=True, help="Set the pruning rate")
 parser.add_argument('--rate_from_config', action='store_true', help="Set if pruning rate from config should be taken")
 parser.add_argument('--run_id', type=str, default="0", help="Set if different run id is necessary")
+parser.add_argument('--gpu', type=str, help="Set gpu id to use")
 # init = Init_Func(config.init_func)
 # torch.manual_seed(config.random_seed)
 
