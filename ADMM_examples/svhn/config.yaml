@@ -55,7 +55,7 @@ general:
  arch: 
   vgg16
  workers: 
-  16
+  8
  logging: 
   False
  log_dir: 
