@@ -226,18 +226,24 @@ def main_worker(gpu, ngpus_per_node, config):
     # will use resume to resume admm training
     if config.load_model:
         if os.path.isfile(config.load_model):
-            if (config.gpu):
-                print(f"Loading state dict from {config.load_model} to device")
-                state_dict = torch.load(config.load_model, map_location=device)['state_dict']
-                # state_dict = dict([(k.replace("module.", ""), state_dict[k]) for k in state_dict])
-                model.load_state_dict(state_dict)
+            if not config.admm:
+                if (config.gpu):
+                    config.model.load_state_dict(torch.load(config.load_model, map_location=device))
+                else:
+                    config.model.load_state_dict(torch.load(config.load_model))
             else:
-                print(f"Loading state dict from {config.load_model}")
-                state_dict = torch.load(config.load_model)['state_dict']
-                state_dict = dict([(k.replace("module.", ""), state_dict[k]) for k in state_dict])
-                model.load_state_dict(state_dict)
+                if (config.gpu):
+                    print(f"Loading state dict from {config.load_model} to device")
+                    state_dict = torch.load(config.load_model, map_location=device)['state_dict']
+                    state_dict = dict([(f"basic_model.{k}", state_dict[k]) for k in state_dict])
+                    config.model.load_state_dict(state_dict)
+                else:
+                    print(f"Loading state dict from {config.load_model}")
+                    state_dict = torch.load(config.load_model)['state_dict']
+                    state_dict = dict([(f"basic_model.{k}", state_dict[k]) for k in state_dict])
+                    config.model.load_state_dict(state_dict)
         else:
-            print("=> no checkpoint found at '{}'".format(config.resume))
+            print("=> no checkpoint found at '{}'".format(config.load_model))
 
     config.prepare_pruning()
 
@@ -283,9 +289,6 @@ def main_worker(gpu, ngpus_per_node, config):
     cudnn.benchmark = True
 
     # Data loading code
-    # TODO reset
-    # traindir = os.path.join(config.data, 'val2')
-    # valdir = os.path.join(config.data, 'val2')
     traindir = os.path.join(config.data, 'train')
     valdir = os.path.join(config.data, 'val')
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -382,9 +385,10 @@ def main_worker(gpu, ngpus_per_node, config):
         #                              }, is_best)
 
     # save last model for admm, optimizer detail is not necessary
-    # if config.save_model and config.admm:
-    #     print('saving model {}'.format(config.save_model))
-    #     torch.save(config.model.state_dict(), config.save_model)
+    if config.save_model and config.admm:
+        print('saving final model {}'.format(config.save_model))
+        torch.save(config.model.state_dict(), config.save_model)
+
     # if config.masked_retrain:
     #     print("after masked retrain")
     #     admm.test_sparsity(config)
