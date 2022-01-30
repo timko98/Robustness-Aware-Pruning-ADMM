@@ -78,16 +78,13 @@ class FreeAT(nn.Module):
         self.std = self.std.expand(3, self.image_dim, self.image_dim).to(device)
 
     def forward(self, input):
-        x = input.detach()
         noise_batch = Variable(
-            self.global_noise_data[0: x.size(0)], requires_grad=True
+            self.global_noise_data[0: input.size(0)], requires_grad=True
         ).to(device)
         in1 = input + noise_batch
         in1.clamp_(0, 1.0)
         in1.sub_(self.mean).div_(self.std)
-        input.sub_(self.mean).div_(self.std)
-
-        return self.basic_model(input), self.basic_model(in1), noise_batch
+        return self.basic_model(in1), noise_batch
 
 
 best_mean_loss = 100.
@@ -227,16 +224,23 @@ def main_worker(gpu, ngpus_per_node, config):
     if config.load_model:
         if os.path.isfile(config.load_model):
             if not config.admm:
-                if (config.gpu):
+                if config.gpu is not None:
                     config.model.load_state_dict(torch.load(config.load_model, map_location=device))
                 else:
                     config.model.load_state_dict(torch.load(config.load_model))
             else:
-                if (config.gpu):
-                    print(f"Loading state dict from {config.load_model} to device")
-                    state_dict = torch.load(config.load_model, map_location=device)['state_dict']
-                    state_dict = dict([(f"basic_model.{k}", state_dict[k]) for k in state_dict])
-                    config.model.load_state_dict(state_dict)
+                if config.gpu is not None:
+                    if len(gpu_list) > 1:
+                        print(f"Loading state dict from {config.load_model} to device")
+                        state_dict = torch.load(config.load_model, map_location=device)['state_dict']
+                        state_dict = dict([(f"basic_model.{k}", state_dict[k]) for k in state_dict])
+                        config.model.load_state_dict(state_dict)
+                    else:
+                        print(f"Loading state dict from {config.load_model} to device")
+                        state_dict = torch.load(config.load_model, map_location=device)['state_dict']
+                        state_dict = dict(
+                            [(f"basic_model.{k.replace('module.', '')}", state_dict[k]) for k in state_dict])
+                        config.model.load_state_dict(state_dict)
                 else:
                     print(f"Loading state dict from {config.load_model}")
                     state_dict = torch.load(config.load_model)['state_dict']
@@ -291,8 +295,6 @@ def main_worker(gpu, ngpus_per_node, config):
     # Data loading code
     traindir = os.path.join(config.data, 'train')
     valdir = os.path.join(config.data, 'val')
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
 
     train_dataset = datasets.ImageFolder(
         traindir,
@@ -300,7 +302,6 @@ def main_worker(gpu, ngpus_per_node, config):
             transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            # normalize,
         ]))
 
     if config.distributed:
@@ -317,7 +318,6 @@ def main_worker(gpu, ngpus_per_node, config):
             transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
-            # normalize,
         ])),
         batch_size=config.batch_size, shuffle=False,
         num_workers=4, pin_memory=True)
@@ -360,7 +360,6 @@ def main_worker(gpu, ngpus_per_node, config):
             train_sampler.set_epoch(epoch)
 
         # train for one epoch
-
         train(train_loader, config, ADMM, criterion, optimizer, scheduler, epoch)
 
         # evaluate on validation set
@@ -401,10 +400,7 @@ def fgsm(gradz, step_size):
 def train(train_loader, config, ADMM, criterion, optimizer, scheduler, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    nat_losses = AverageMeter()
     adv_losses = AverageMeter()
-    nat_top1 = AverageMeter()
-    nat_top5 = AverageMeter()
     adv_top1 = AverageMeter()
     adv_top5 = AverageMeter()
 
@@ -422,8 +418,8 @@ def train(train_loader, config, ADMM, criterion, optimizer, scheduler, epoch):
         else:
             scheduler.step()
 
-        input = input.cuda(device, non_blocking=True)
-        target = target.cuda(device, non_blocking=True)
+        input = input.to(device, non_blocking=True)
+        target = target.to(device, non_blocking=True)
         data = input
 
         if config.mixup:
@@ -431,31 +427,21 @@ def train(train_loader, config, ADMM, criterion, optimizer, scheduler, epoch):
 
         # compute output with forward
         for _ in range(config.n_repeats):
-            nat_output, adv_output, noise_batch = config.model(input)
+            adv_output, noise_batch = config.model(input)
 
             if config.mixup:
                 adv_loss = mixup_criterion(criterion, adv_output, target_a, target_b, lam, config.smooth)
-                nat_loss = mixup_criterion(criterion, nat_output, target_a, target_b, lam, config.smooth)
             else:
                 adv_loss = criterion(adv_output, target, smooth=config.smooth)
-                nat_loss = criterion(nat_output, target, smooth=config.smooth)
 
             if config.admm:
                 admm.admm_update(config, ADMM, device, train_loader, optimizer, epoch, data, i)  # update Z and U
                 adv_loss, admm_loss, mixed_loss = admm.append_admm_loss(config, ADMM, adv_loss)  # append admm losss
 
-            # measure accuracy and record loss (OLD)
-            # acc1, acc5 = accuracy(output, target, topk=(1, 5))
-
-            # measure accuracy and record loss (NEW)
-            nat_acc1, nat_acc5 = accuracy(nat_output, target, topk=(1, 5))
             adv_acc1, adv_acc5 = accuracy(adv_output, target, topk=(1, 5))
 
-            nat_losses.update(nat_loss.item(), input.size(0))
             adv_losses.update(adv_loss.item(), input.size(0))
-            nat_top1.update(nat_acc1[0], input.size(0))
             adv_top1.update(adv_acc1[0], input.size(0))
-            nat_top5.update(nat_acc5[0], input.size(0))
             adv_top5.update(adv_acc5[0], input.size(0))
 
             # compute gradient and do SGD step
@@ -488,15 +474,12 @@ def train(train_loader, config, ADMM, criterion, optimizer, scheduler, epoch):
                 print('Epoch: [{0}][{1}/{2}]\t'
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                      'Nat_Loss {nat_loss.val:.4f} ({nat_loss.avg:.4f})\t'
-                      'Nat_Acc@1 {nat_top1.val:.3f} ({nat_top1.avg:.3f})\t'
-                      'Nat_Acc@5 {nat_top5.val:.3f} ({nat_top5.avg:.3f})\t'
                       'Adv_Loss {adv_loss.val:.4f} ({adv_loss.avg:.4f})\t'
                       'Adv_Acc@1 {adv_top1.val:.3f} ({adv_top1.avg:.3f})\t'
                       'Adv_Acc@1 {adv_top5.val:.3f} ({adv_top5.avg:.3f})\t'
                     .format(
                     epoch, i, len(train_loader), batch_time=batch_time,
-                    data_time=data_time, nat_loss=nat_losses, nat_top1=nat_top1, nat_top5=nat_top5, adv_loss=adv_losses,
+                    data_time=data_time, adv_loss=adv_losses,
                     adv_top1=adv_top1, adv_top5=adv_top5))
 
 
@@ -518,14 +501,13 @@ def validate(val_loader, criterion, config, ADMM, epoch, optimizer):
     adv_top1 = AverageMeter()
     nat_top5 = AverageMeter()
     adv_top5 = AverageMeter()
-    model = config.model
     # switch to evaluate mode
-    model.eval()
+    config.model.eval()
 
     end = time.time()
     for i, (input, target) in enumerate(val_loader):
-        input = input.cuda(device, non_blocking=True)
-        target = target.cuda(device, non_blocking=True)
+        input = input.to(device, non_blocking=True)
+        target = target.to(device, non_blocking=True)
 
         # Validate with PGD
         orig_input = input.clone()
@@ -536,7 +518,7 @@ def validate(val_loader, criterion, config, ADMM, epoch, optimizer):
             invar = Variable(input, requires_grad=True)
             in1 = invar - mean
             in1.div_(std)
-            output = model.basic_model(in1)
+            output = config.model.basic_model(in1)
             ascend_loss = criterion(output, target)
             ascend_grad = torch.autograd.grad(ascend_loss, invar)[0]
             pert = fgsm(ascend_grad, config.pgd_step_size)
@@ -549,8 +531,8 @@ def validate(val_loader, criterion, config, ADMM, epoch, optimizer):
         input.sub_(mean).div_(std)
         orig_input.sub_(mean).div_(std)
         with torch.no_grad():
-            nat_output = model.basic_model(orig_input)
-            adv_output = model.basic_model(input)
+            nat_output = config.model.basic_model(orig_input)
+            adv_output = config.model.basic_model(input)
 
             nat_loss = criterion(nat_output, target)
             adv_loss = criterion(adv_output, target)
