@@ -32,10 +32,10 @@ class Config:
         if self.pruning_rate == 0.1 and self.sparsity_type == "weight":
             self.strategy_id = self.strategy_id.replace("_", "0_")
 
-        self.save_model = f"resnet50_{self.stage}_{self.sparsity_type}{'_HARP' if not self.uniform else ''}.pth.tar"
+        self.save_model = f"resnet50_{self.stage}_{self.sparsity_type}_{self.strategy_id}{'_HARP' if not self.uniform else ''}.pth.tar"
 
         if self.stage == 'retrain':
-            self.load_model = f"resnet50_admm_{self.sparsity_type}{'_HARP' if not self.uniform else ''}.pth.tar"
+            self.load_model = f"resnet50_admm_{self.sparsity_type}_{self.strategy_id}{'_HARP' if not self.uniform else ''}.pth.tar"
         elif self.stage == 'admm':
             self.load_model = "resnet50_pretrained.pth.tar"
         else:

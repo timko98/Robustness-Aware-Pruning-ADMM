@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 import random
 import shutil
@@ -321,6 +322,8 @@ def main_worker(gpu, ngpus_per_node, config):
         ])),
         batch_size=config.batch_size, shuffle=False,
         num_workers=4, pin_memory=True)
+
+    config.epochs = int(math.ceil(config.epochs / config.n_repeats))
 
     scheduler = None
     if config.lr_scheduler == 'cosine':
