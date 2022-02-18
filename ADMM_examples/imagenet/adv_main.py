@@ -70,7 +70,7 @@ class FreeAT(nn.Module):
         # check if list is correct type
         self.mean = [0.485, 0.456, 0.406]
         self.std = [0.229, 0.224, 0.225]
-        self.batch_size = 256
+        self.batch_size = config.batch_size
         self.image_dim = 224
         self.global_noise_data = torch.zeros([self.batch_size, 3, self.image_dim, self.image_dim]).to(device)
         self.mean = torch.Tensor(np.array(self.mean)[:, np.newaxis, np.newaxis])
